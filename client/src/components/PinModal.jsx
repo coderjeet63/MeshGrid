@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import db from '../db';
+import { pinsMap } from '../meshSync';
 import axios from 'axios';
 
 const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
@@ -22,25 +22,36 @@ const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
     e.preventDefault();
     
     try {
-      // Step 1: Save to Dexie first (offline-first)
-      const localPin = await db.pins.add({
+      // Step 1: Save to Yjs map (CRDT - automatically syncs across peers and persists to IndexedDB)
+      const uniquePinId = `pin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const pinData = {
         title: formData.title,
         desc: formData.desc,
         pinType: formData.pinType,
         latitude: location.lat,
         longitude: location.lng,
-        syncedStatus: 0 // 0 = not synced
-      });
+        syncedStatus: 0, // 0 = not synced to backend
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
       
-      console.log('Pin saved locally with ID:', localPin);
+      // Save to Yjs map - this automatically persists to IndexedDB and syncs across WebRTC peers
+      pinsMap.set(uniquePinId, pinData);
+      console.log('Pin saved to Yjs map with ID:', uniquePinId);
       
       // Step 2: Update React state immediately for visual feedback
       const pinDataForState = {
+        _id: uniquePinId,
         title: formData.title,
         desc: formData.desc,
         pinType: formData.pinType,
-        latitude: location.lat,
-        longitude: location.lng,
+        location: {
+          type: 'Point',
+          coordinates: [location.lng, location.lat]
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
         syncedStatus: 0
       };
       
@@ -61,19 +72,25 @@ const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
             }
           });
           
-          // Update synced status in Dexie
-          await db.pins.update(localPin, { syncedStatus: 1 });
+          // Update synced status in Yjs map
+          const updatedPinData = {
+            ...pinData,
+            syncedStatus: 1, // 1 = synced to backend
+            updatedAt: new Date().toISOString()
+          };
+          pinsMap.set(uniquePinId, updatedPinData);
+          
           console.log('Pin synced to backend successfully');
           
           // Call original onSubmit for immediate UI update
           onSubmit(response.data);
         } catch (error) {
           console.error('Failed to sync to backend:', error);
-          // Still close modal since data is saved locally
+          // Still close modal since data is saved locally and synced via WebRTC
           onClose();
         }
       } else {
-        console.log('Offline - pin saved locally only');
+        console.log('Offline - pin saved locally and will sync via WebRTC');
         onClose();
       }
     } catch (error) {
