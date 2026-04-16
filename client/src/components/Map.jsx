@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
@@ -32,26 +32,33 @@ const Map = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [map, setMap] = useState(null);
 
-  const syncToCloud = async () => {
-    try {
-      if (!navigator.onLine) return;
+  const apiBaseUrl = import.meta.env.VITE_API_URL;
 
-      const pinsArray = Array.from(pinsMap.entries()).map(([id, pin]) => ({
-        id,
+  const syncToCloud = useCallback(async () => {
+    console.log("⚡ [SYNC] 1. syncToCloud triggered. isOnline:", navigator.onLine);
+    if (!navigator.onLine) return;
+
+    try {
+      // IMPORTANT: pinsMap.values() loses the Yjs key (the unique pin id).
+      // We must include it so the backend can upsert by yjsId.
+      const pinsArray = Array.from(pinsMap.entries()).map(([yjsId, pin]) => ({
+        yjsId,
         ...pin,
       }));
+      console.log("📦 [SYNC] 2. Raw data from Yjs:", pinsArray);
 
-      if (pinsArray.length === 0) return;
+      if (pinsArray.length === 0) {
+        console.log("⚠️ [SYNC] 3. No pins inside Yjs to sync. Aborting.");
+        return;
+      }
 
-      await axios.post('http://localhost:5000/api/pins/sync', {
-        pins: pinsArray,
-      });
-
-      console.log('Cloud Sync Successful!');
+      console.log("🚀 [SYNC] 4. Firing Axios POST request...");
+      const response = await axios.post(`${apiBaseUrl}/api/pins/sync`, { pins: pinsArray });
+      console.log("✅ [SYNC] 5. Success! Backend says:", response.data);
     } catch (error) {
-      console.error('Cloud sync failed:', error);
+      console.error("🚨 [SYNC] ERROR:", error.response?.data || error.message);
     }
-  };
+  }, []);
 
   // Load pins from Yjs map and observe for changes
   useEffect(() => {
@@ -80,7 +87,7 @@ const Map = () => {
     loadPins();
 
     // Observe changes to the Yjs map
-    const observer = (_event) => {
+    const observer = () => {
       console.log('Yjs map changed, updating pins...');
       loadPins();
     };
@@ -94,11 +101,13 @@ const Map = () => {
   }, []);
 
   useEffect(() => {
+    console.log('[SYNC] Registering window online listener');
     window.addEventListener('online', syncToCloud);
     return () => {
+      console.log('[SYNC] Removing window online listener');
       window.removeEventListener('online', syncToCloud);
     };
-  }, []);
+  }, [syncToCloud]);
 
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
@@ -274,6 +283,14 @@ const Map = () => {
         disabled={!userLocation}
       >
         Recenter
+      </button>
+
+      <button
+        type="button"
+        onClick={syncToCloud}
+        className="absolute top-4 right-24 z-[1000] bg-blue-500 hover:bg-blue-600 text-white border border-blue-600 shadow px-3 py-2 rounded-md text-sm"
+      >
+        Force Sync
       </button>
 
       {modalOpen && (
