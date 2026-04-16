@@ -32,6 +32,27 @@ const Map = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [map, setMap] = useState(null);
 
+  const syncToCloud = async () => {
+    try {
+      if (!navigator.onLine) return;
+
+      const pinsArray = Array.from(pinsMap.entries()).map(([id, pin]) => ({
+        id,
+        ...pin,
+      }));
+
+      if (pinsArray.length === 0) return;
+
+      await axios.post('http://localhost:5000/api/pins/sync', {
+        pins: pinsArray,
+      });
+
+      console.log('Cloud Sync Successful!');
+    } catch (error) {
+      console.error('Cloud sync failed:', error);
+    }
+  };
+
   // Load pins from Yjs map and observe for changes
   useEffect(() => {
     // Initial load of pins from Yjs map
@@ -59,7 +80,7 @@ const Map = () => {
     loadPins();
 
     // Observe changes to the Yjs map
-    const observer = (event) => {
+    const observer = (_event) => {
       console.log('Yjs map changed, updating pins...');
       loadPins();
     };
@@ -69,6 +90,13 @@ const Map = () => {
     // Cleanup observer on unmount
     return () => {
       pinsMap.unobserve(observer);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('online', syncToCloud);
+    return () => {
+      window.removeEventListener('online', syncToCloud);
     };
   }, []);
 
@@ -123,22 +151,10 @@ const Map = () => {
     setPins(prevPins => [...prevPins, newPin]);
   };
 
-  const handlePinSubmit = async (pinData) => {
-    try {
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/pins`, {
-        ...pinData,
-        location: {
-          type: 'Point',
-          coordinates: [newPinLocation.lng, newPinLocation.lat]
-        }
-      });
-      
-      // Add the new pin to the existing pins
-      setPins([...pins, response.data]);
-      handleModalClose();
-    } catch (error) {
-      console.error('Error creating pin:', error);
-    }
+  const handlePinSubmit = async (createdPinFromServer) => {
+    setPins((prevPins) => [...prevPins, createdPinFromServer]);
+    handleModalClose();
+    await syncToCloud();
   };
 
   const getPinIcon = useMemo(() => {
@@ -267,6 +283,7 @@ const Map = () => {
             onClose={handleModalClose}
             onSubmit={handlePinSubmit}
             onPinAdd={addPinToState}
+            onCloudSync={syncToCloud}
             location={newPinLocation}
           />
         </div>

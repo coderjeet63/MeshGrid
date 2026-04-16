@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { pinsMap } from '../meshSync';
 import axios from 'axios';
 
-const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
+const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, onCloudSync, location }) => {
   const [formData, setFormData] = useState({
     title: '',
     desc: '',
@@ -39,6 +39,10 @@ const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
       // Save to Yjs map - this automatically persists to IndexedDB and syncs across WebRTC peers
       pinsMap.set(uniquePinId, pinData);
       console.log('Pin saved to Yjs map with ID:', uniquePinId);
+
+      if (onCloudSync) {
+        onCloudSync();
+      }
       
       // Step 2: Update React state immediately for visual feedback
       const pinDataForState = {
@@ -63,6 +67,7 @@ const PinModal = ({ isOpen, onClose, onSubmit, onPinAdd, location }) => {
       if (navigator.onLine) {
         try {
           const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/pins`, {
+            yjsId: uniquePinId,
             title: formData.title,
             desc: formData.desc,
             pinType: formData.pinType,

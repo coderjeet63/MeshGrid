@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 
 const pinSchema = new mongoose.Schema({
+  yjsId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+    trim: true
+  },
   title: {
     type: String,
     required: true,
@@ -46,6 +53,7 @@ const pinSchema = new mongoose.Schema({
 
 // Create 2dsphere index for location field
 pinSchema.index({ location: '2dsphere' });
+pinSchema.index({ yjsId: 1 }, { unique: true });
 
 // Update the updatedAt field on save
 pinSchema.pre('save', function(next) {
