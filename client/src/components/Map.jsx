@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import PinModal from './PinModal';
 import { pinsMap } from '../meshSync';
 import { calculateDistance } from '../utils/math';
@@ -32,13 +33,18 @@ const Map = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [map, setMap] = useState(null);
 
-  const apiBaseUrl = import.meta.env.VITE_API_URL;
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
   const syncToCloud = useCallback(async () => {
     console.log("⚡ [SYNC] 1. syncToCloud triggered. isOnline:", navigator.onLine);
     if (!navigator.onLine) return;
 
     try {
+      if (!apiBaseUrl) {
+        console.error("🚨 [SYNC] ERROR:", 'VITE_API_URL is not set');
+        return;
+      }
+
       // IMPORTANT: pinsMap.values() loses the Yjs key (the unique pin id).
       // We must include it so the backend can upsert by yjsId.
       const pinsArray = Array.from(pinsMap.entries()).map(([yjsId, pin]) => ({
@@ -58,7 +64,52 @@ const Map = () => {
     } catch (error) {
       console.error("🚨 [SYNC] ERROR:", error.response?.data || error.message);
     }
-  }, []);
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!apiBaseUrl) {
+      console.error('[SOCKET] VITE_API_URL is not set - cannot connect');
+      return;
+    }
+
+    console.log('[SOCKET] Connecting to:', apiBaseUrl);
+    const socket = io(apiBaseUrl);
+
+    socket.on('connect', () => {
+      console.log('[SOCKET] Connected. id:', socket.id);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('[SOCKET] Disconnected. reason:', reason);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('[SOCKET] Connection error:', err.message);
+    });
+
+    socket.on('new_pins_broadcast', (incomingPins) => {
+      console.log('[SOCKET] new_pins_broadcast received. count:', Array.isArray(incomingPins) ? incomingPins.length : 'invalid');
+
+      if (!Array.isArray(incomingPins)) return;
+
+      incomingPins
+        .filter((p) => p && (p.yjsId || p.id))
+        .forEach((p) => {
+          const yjsId = p.yjsId || p.id;
+
+          const nextValue = { ...p };
+          delete nextValue.id;
+          delete nextValue.yjsId;
+
+          pinsMap.set(yjsId, nextValue);
+        });
+    });
+
+    return () => {
+      console.log('[SOCKET] Disconnecting');
+      socket.disconnect();
+    };
+  }, [apiBaseUrl]);
 
   // Load pins from Yjs map and observe for changes
   useEffect(() => {

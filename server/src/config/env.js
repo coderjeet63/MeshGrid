@@ -1,0 +1,17 @@
+const PORT = process.env.PORT || 5000;
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*';
+
+const MONGODB_URI = process.env.MONGODB_URI;
+
+const REDIS_URL = process.env.REDIS_URL;
+const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+module.exports = {
+  PORT,
+  CLIENT_ORIGIN,
+  MONGODB_URI,
+  REDIS_URL,
+  UPSTASH_REDIS_REST_URL,
+  UPSTASH_REDIS_REST_TOKEN,
+};
